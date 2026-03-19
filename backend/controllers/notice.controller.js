@@ -1,0 +1,239 @@
+const supabase = require('../models/supabase');
+
+// Get filtered notice feed for student
+const getFeed = async (req, res) => {
+  try {
+    const { branch, year_of_grad, dept, section } = req.user;
+    const { category, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from('notices')
+      .select('*, poster:posted_by(id, name, role, avatar_url)', { count: 'exact' })
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (category && category !== 'all') {
+      query = query.eq('category', category);
+    }
+
+    const { data: notices, error, count } = await query;
+
+    if (error) {
+      console.error('Feed fetch error:', error);
+      return res.status(500).json({ error: 'Failed to fetch notices.' });
+    }
+
+    // Filter by target_criteria (specificity engine)
+    const filtered = notices.filter(notice => {
+      const criteria = notice.target_criteria;
+      if (!criteria || criteria.global) return true;
+
+      let matches = true;
+      if (criteria.branch && criteria.branch !== 'all') {
+        matches = matches && criteria.branch === branch;
+      }
+      if (criteria.year && criteria.year !== 'all') {
+        matches = matches && String(criteria.year) === String(year_of_grad);
+      }
+      if (criteria.dept && criteria.dept !== 'all') {
+        matches = matches && criteria.dept === dept;
+      }
+      if (criteria.section && criteria.section !== 'all') {
+        matches = matches && criteria.section === section;
+      }
+      return matches;
+    });
+
+    res.json({
+      notices: filtered,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+    });
+  } catch (err) {
+    console.error('Feed error:', err);
+    res.status(500).json({ error: 'Server error fetching feed.' });
+  }
+};
+
+// Get single notice detail
+const getNoticeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: notice, error } = await supabase
+      .from('notices')
+      .select('*, poster:posted_by(id, name, role, avatar_url)')
+      .eq('id', id)
+      .single();
+
+    if (error || !notice) {
+      return res.status(404).json({ error: 'Notice not found.' });
+    }
+
+    // Get related notices (same category)
+    const { data: related } = await supabase
+      .from('notices')
+      .select('id, title, category, created_at, target_criteria')
+      .eq('category', notice.category)
+      .eq('status', 'active')
+      .neq('id', id)
+      .order('created_at', { ascending: false })
+      .limit(3);
+
+    res.json({ notice, related: related || [] });
+  } catch (err) {
+    console.error('Notice detail error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+// Post a new notice (manual - Faculty/CR)
+const createNotice = async (req, res) => {
+  try {
+    const { title, content, category, target_criteria, pdf_url, original_image_url } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required.' });
+    }
+
+    // If CR, enforce their own branch/year/section
+    let finalTarget = target_criteria || { global: true };
+    if (req.user.role === 'cr') {
+      finalTarget = {
+        branch: req.user.branch,
+        year: req.user.year_of_grad,
+        section: req.user.section,
+      };
+    }
+
+    const { data: notice, error } = await supabase
+      .from('notices')
+      .insert([{
+        title,
+        content,
+        category: category || 'general',
+        original_image_url: original_image_url || null,
+        pdf_url: pdf_url || null,
+        posted_by: req.user.id,
+        source: 'manual',
+        target_criteria: finalTarget,
+        status: 'active',
+      }])
+      .select('*, poster:posted_by(id, name, role, avatar_url)')
+      .single();
+
+    if (error) {
+      console.error('Create notice error:', error);
+      return res.status(500).json({ error: 'Failed to create notice.' });
+    }
+
+    res.status(201).json({ notice });
+  } catch (err) {
+    console.error('Create notice error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+// Update a notice
+const updateNotice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Check ownership or admin
+    const { data: existing } = await supabase
+      .from('notices')
+      .select('posted_by')
+      .eq('id', id)
+      .single();
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Notice not found.' });
+    }
+
+    if (existing.posted_by !== req.user.id && !['super_admin', 'faculty'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized to edit this notice.' });
+    }
+
+    const { data: notice, error } = await supabase
+      .from('notices')
+      .update(updates)
+      .eq('id', id)
+      .select('*, poster:posted_by(id, name, role, avatar_url)')
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to update notice.' });
+    }
+
+    res.json({ notice });
+  } catch (err) {
+    console.error('Update notice error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+// Delete (archive) a notice
+const deleteNotice = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('notices')
+      .update({ status: 'archived' })
+      .eq('id', id);
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to archive notice.' });
+    }
+
+    res.json({ message: 'Notice archived successfully.' });
+  } catch (err) {
+    console.error('Delete notice error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+// Search notices
+const searchNotices = async (req, res) => {
+  try {
+    const { q, category, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from('notices')
+      .select('*, poster:posted_by(id, name, role, avatar_url)', { count: 'exact' })
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (q) {
+      query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+    }
+
+    if (category && category !== 'all') {
+      query = query.eq('category', category);
+    }
+
+    const { data: notices, error, count } = await query;
+
+    if (error) {
+      return res.status(500).json({ error: 'Search failed.' });
+    }
+
+    res.json({
+      notices: notices || [],
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+    });
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+module.exports = { getFeed, getNoticeById, createNotice, updateNotice, deleteNotice, searchNotices };
