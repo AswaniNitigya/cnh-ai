@@ -6,7 +6,8 @@ import { Bell, Loader2 } from 'lucide-react';
 
 const POSTED_CATEGORIES = ['all', 'academic', 'exam', 'event', 'placement', 'general'];
 const SCRAPED_CATEGORIES = [
-  { id: 'scraped_all', label: 'All Records' },
+  { id: 'scraped_all', label: 'All' },
+  { id: 'scraped_records', label: 'All Records' },
   { id: 'scraped_exam', label: 'Examination Notice' }
 ];
 const COMING_SOON_CATEGORIES = ['Syllabus', 'Timetable'];
@@ -32,7 +33,10 @@ const Dashboard = () => {
         params.source = 'scraper';
         if (activeFilter === 'scraped_exam') {
           params.category = 'exam';
+        } else if (activeFilter === 'scraped_records') {
+          params.category = 'general';
         }
+        // 'scraped_all' sends no category → gets all scraped notices
       } else if (activeFilter !== 'all') {
         params.category = activeFilter;
         params.source = 'manual'; // Assuming posted notices are manual

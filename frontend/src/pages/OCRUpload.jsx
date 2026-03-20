@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, FileImage, Languages, Loader2, Send, Save, X } from 'lucide-react';
+import { Upload, FileImage, FileText, Languages, Loader2, Send, Save, X } from 'lucide-react';
 import api from '../lib/api';
 
 const BRANCHES = ['all', 'CSE', 'ECE', 'EE', 'ME', 'CE', 'IT', 'Chemical'];
@@ -21,11 +21,13 @@ const OCRUpload = () => {
   const [targetBranch, setTargetBranch] = useState('all');
   const [targetYear, setTargetYear] = useState('all');
 
+  const isPDF = (f) => f?.type === 'application/pdf' || f?.name?.toLowerCase().endsWith('.pdf');
+
   const handleFileChange = (e) => {
     const selected = e.target.files?.[0];
     if (selected) {
       setFile(selected);
-      setPreview(URL.createObjectURL(selected));
+      setPreview(isPDF(selected) ? 'pdf' : URL.createObjectURL(selected));
       setHindiText('');
       setEnglishText('');
       setPosted(false);
@@ -37,7 +39,7 @@ const OCRUpload = () => {
     const dropped = e.dataTransfer.files?.[0];
     if (dropped) {
       setFile(dropped);
-      setPreview(URL.createObjectURL(dropped));
+      setPreview(isPDF(dropped) ? 'pdf' : URL.createObjectURL(dropped));
       setHindiText('');
       setEnglishText('');
       setPosted(false);
@@ -114,7 +116,7 @@ const OCRUpload = () => {
   return (
     <div className="animate-fade-in max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>OCR Upload & Translation</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>Upload a Hindi printout image, extract text, translate, and post as a notice</p>
+      <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>Upload a Hindi notice (image or PDF), extract text, translate, and post</p>
 
       {posted ? (
         <div className="text-center py-16">
@@ -138,10 +140,10 @@ const OCRUpload = () => {
               className="glass-card p-8 text-center cursor-pointer"
               onClick={() => document.getElementById('ocrFileInput').click()}
             >
-              <input id="ocrFileInput" type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+              <input id="ocrFileInput" type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={handleFileChange} />
               <FileImage className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-              <p className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Drop your Hindi printout image here</p>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>or click to browse files</p>
+              <p className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Drop your Hindi notice here</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Supports images (JPG, PNG) and PDF files</p>
             </div>
 
             {/* Preview */}
@@ -153,14 +155,24 @@ const OCRUpload = () => {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                <img src={preview} alt="Preview" className="w-full rounded-lg border" style={{ borderColor: 'var(--border-color)' }} />
+                {preview === 'pdf' ? (
+                  <div className="flex items-center gap-3 p-4 rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-input)' }}>
+                    <FileText className="w-10 h-10 flex-shrink-0 text-red-500" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{file?.name}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{(file?.size / 1024).toFixed(1)} KB • PDF Document</p>
+                    </div>
+                  </div>
+                ) : (
+                  <img src={preview} alt="Preview" className="w-full rounded-lg border" style={{ borderColor: 'var(--border-color)' }} />
+                )}
                 <button
                   onClick={processOCR}
                   disabled={processing}
                   className="mt-4 w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
                 >
                   {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {processing ? 'Processing...' : 'Extract Text (OCR)'}
+                  {processing ? 'Processing...' : (preview === 'pdf' ? 'Extract Text (PDF)' : 'Extract Text (OCR)')}
                 </button>
 
                 {processing && (

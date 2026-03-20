@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT,
   is_cr BOOLEAN DEFAULT false,
   avatar_url TEXT,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'pending_approval')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

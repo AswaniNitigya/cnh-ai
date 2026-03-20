@@ -3,12 +3,19 @@ const cheerio = require('cheerio');
 const crypto = require('crypto');
 const pdfParse = require('pdf-parse');
 const supabase = require('../models/supabase');
+const { translate } = require('./translator.service');
+const { isTextUsable, ocrPdfBuffer } = require('./pdf-ocr.service');
 
 const DEFAULT_SCRAPER_URL = process.env.SCRAPER_URL || 'https://www.mmmut.ac.in/AllRecord';
 
 /**
+ * Check if text contains Hindi/Devanagari characters.
+ */
+const containsHindi = (text) => /[\u0900-\u097F]/.test(text);
+
+/**
  * Scrapes the MMMUT portal for new PDF notices.
- * Compares content hashes to avoid duplicates.
+ * Pipeline: Scrape → PDF text extraction → Hindi→English translation → Store notice
  */
 const scrape = async (targetUrls = []) => {
   const urlsToScrape = targetUrls.length > 0 ? targetUrls : [DEFAULT_SCRAPER_URL];
@@ -52,7 +59,7 @@ const scrape = async (targetUrls = []) => {
         }
       }
       title = title || `Notice ${i + 1}`;
-      title = title.substring(0, 250); // Prevent extremely long titles from crashing DB
+      title = title.substring(0, 250);
 
       if (href) {
         let fullUrl = href;
@@ -81,6 +88,8 @@ const scrape = async (targetUrls = []) => {
         continue;
       }
 
+      console.log(`Processing new notice: ${pdf.title}`);
+
       // Log the scrape
       await supabase.from('scraped_logs').insert([{
         source_url: pdf.url,
@@ -89,25 +98,67 @@ const scrape = async (targetUrls = []) => {
         date_found: new Date().toISOString(),
       }]);
 
-      let summary = 'Detailed content not available. Please view the original PDF.';
+      // Step 1: Extract text from PDF (try pdf-parse first, fallback to OCR)
+      let rawText = '';
+      let pdfBuffer = null;
       try {
-        const pdfResponse = await axios.get(pdf.url, { responseType: 'arraybuffer', timeout: 15000 });
-        const dataBuffer = Buffer.from(pdfResponse.data);
-        const pdfData = await pdfParse(dataBuffer);
-        
-        let text = pdfData.text || '';
-        text = text.replace(/\s+/g, ' ').trim();
-        if (text.length > 0) {
-          summary = text.substring(0, 400) + (text.length > 400 ? '...' : '');
-        }
+        const pdfResponse = await axios.get(pdf.url, { responseType: 'arraybuffer', timeout: 30000 });
+        pdfBuffer = Buffer.from(pdfResponse.data);
+        const pdfData = await pdfParse(pdfBuffer);
+        rawText = (pdfData.text || '').replace(/\s+/g, ' ').trim();
       } catch (pdfErr) {
-        console.error(`PDF parse error for ${pdf.url}:`, pdfErr.message);
+        console.error(`  PDF download/parse error for ${pdf.url}:`, pdfErr.message);
       }
 
-      // Create a notice from the scraped PDF
+      // Check if pdf-parse output is usable — MMMUT PDFs often have garbled text
+      if (!isTextUsable(rawText) && pdfBuffer) {
+        console.log(`  pdf-parse text is garbled/empty, falling back to OCR...`);
+        try {
+          rawText = await ocrPdfBuffer(pdfBuffer, 2);  // OCR first 2 pages
+        } catch (ocrErr) {
+          console.error(`  OCR fallback failed:`, ocrErr.message);
+        }
+      }
+
+      // Step 2: Translate title and content if Hindi detected
+      let finalTitle = pdf.title;
+      let finalContent = '';
+
+      if (rawText.length > 20) {
+        // Translate content
+        if (containsHindi(rawText)) {
+          try {
+            console.log(`  Translating content (${rawText.length} chars)...`);
+            const contentToTranslate = rawText.substring(0, 3000); // Limit for translation
+            const translatedContent = await translate(contentToTranslate, 'hi', 'en');
+            finalContent = translatedContent + (rawText.length > 3000 ? '\n\n[Content truncated — view the full PDF for complete details]' : '');
+          } catch (transErr) {
+            console.error(`  Translation failed for content:`, transErr.message);
+            finalContent = rawText.substring(0, 500) + (rawText.length > 500 ? '...' : '');
+          }
+        } else {
+          // Already in English or mixed — use as-is
+          finalContent = rawText.substring(0, 1500) + (rawText.length > 1500 ? '...' : '');
+        }
+      } else {
+        finalContent = 'Detailed content not available. Please view the original PDF.';
+      }
+
+      // Translate title if it contains Hindi
+      if (containsHindi(pdf.title)) {
+        try {
+          console.log(`  Translating title...`);
+          finalTitle = await translate(pdf.title, 'hi', 'en');
+        } catch (titleErr) {
+          console.error(`  Title translation failed:`, titleErr.message);
+          finalTitle = pdf.title; // keep original
+        }
+      }
+
+      // Step 3: Create the notice with translated content
       await supabase.from('notices').insert([{
-        title: pdf.title,
-        content: `${summary}\n\n*Automatically scraped from MMMUT portal. View the original PDF for full details.*`,
+        title: finalTitle,
+        content: `${finalContent}\n\n*Automatically scraped and translated from MMMUT portal. View the original PDF for full details.*`,
         category: scrapeCategory,
         pdf_url: pdf.url,
         source: 'scraper',
@@ -116,7 +167,8 @@ const scrape = async (targetUrls = []) => {
       }]);
 
         results.newCount++;
-        results.details.push({ title: pdf.title, url: pdf.url });
+        results.details.push({ title: finalTitle, url: pdf.url });
+        console.log(`  ✅ Saved: ${finalTitle}`);
       }
     }
 
@@ -129,3 +181,4 @@ const scrape = async (targetUrls = []) => {
 };
 
 module.exports = { scrape };
+
