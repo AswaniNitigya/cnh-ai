@@ -5,20 +5,24 @@ const useAuthStore = create((set, get) => ({
   user: null,
   token: localStorage.getItem('cnh_token') || null,
   isLoading: false,
+  isInitializing: true,
   error: null,
 
   // Initialize - check stored token
   init: async () => {
     const token = localStorage.getItem('cnh_token');
-    if (!token) return;
+    if (!token) {
+      set({ isInitializing: false });
+      return;
+    }
 
     try {
-      set({ isLoading: true });
+      set({ isInitializing: true });
       const { data } = await api.get('/auth/me');
-      set({ user: data.user, token, isLoading: false });
+      set({ user: data.user, token, isInitializing: false });
     } catch (err) {
       localStorage.removeItem('cnh_token');
-      set({ user: null, token: null, isLoading: false });
+      set({ user: null, token: null, isInitializing: false });
     }
   },
 
@@ -67,6 +71,22 @@ const useAuthStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem('cnh_token');
     set({ user: null, token: null, error: null });
+  },
+
+  // Change Password
+  changePassword: async (currentPassword, newPassword) => {
+    try {
+      set({ isLoading: true, error: null });
+      await api.put('/auth/change-password', { currentPassword, newPassword });
+      set({ isLoading: false });
+      return { success: true };
+    } catch (err) {
+      set({
+        error: err.response?.data?.error || 'Failed to change password.',
+        isLoading: false,
+      });
+      return { success: false, error: err.response?.data?.error };
+    }
   },
 
   // Check role

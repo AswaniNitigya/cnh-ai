@@ -18,13 +18,16 @@ import {
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import useThemeStore from '../../store/themeStore';
+import useNotificationStore from '../../store/notificationStore';
 
 const TopBar = () => {
   const { user, logout, hasRole } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
+  const { notifications, unreadCount, markAsRead } = useNotificationStore();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -107,13 +110,43 @@ const TopBar = () => {
           </button>
 
           {/* Notifications */}
-          <button
-            className="relative p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setNotifOpen(!notifOpen)}
+              className="relative p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+              )}
+            </button>
+            
+            {/* Notif Dropdown */}
+            {notifOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+                <div className="absolute right-0 mt-2 w-80 rounded-xl border shadow-lg z-50 overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 border-b flex justify-between items-center" style={{ borderColor: 'var(--border-color)' }}>
+                    <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Notifications</h3>
+                    <button onClick={() => { markAsRead('all'); setNotifOpen(false); }} className="text-xs text-brand-500 hover:text-brand-600">Mark all read</button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-4 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No notifications</div>
+                    ) : (
+                      notifications.map(n => (
+                        <div key={n.id} onClick={() => { markAsRead(n.id); if (n.link_id) navigate('/notice/' + n.link_id); setNotifOpen(false); }} className={`p-3 border-b cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${!n.is_read ? 'bg-brand-500/5' : ''}`} style={{ borderColor: 'var(--border-color)' }}>
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{n.title}</p>
+                          <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{n.body}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* User avatar */}
           {user && (
@@ -135,9 +168,9 @@ const TopBar = () => {
       {/* Mobile slide-out menu */}
       {mobileMenuOpen && (
         <>
-          <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
+          <div className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setMobileMenuOpen(false)} />
           <div
-            className="fixed top-0 left-0 w-72 h-full z-50 md:hidden animate-slide-in flex flex-col"
+            className="fixed top-0 left-0 w-72 h-full z-[60] md:hidden animate-slide-in flex flex-col"
             style={{ background: 'var(--bg-sidebar)' }}
           >
             {/* Mobile menu header */}

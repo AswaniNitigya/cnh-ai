@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import useAuthStore from './store/authStore';
 import useThemeStore from './store/themeStore';
+import useNotificationStore from './store/notificationStore';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Dashboard from './pages/Dashboard';
@@ -25,7 +26,7 @@ const AppLayout = () => {
       <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       <div className={`transition-all duration-300 ${collapsed ? 'md:ml-[72px]' : 'md:ml-[240px]'}`}>
         <TopBar />
-        <main className="p-4 md:p-6 main-content">
+        <main className="p-4 pb-24 md:p-6 md:pb-6 main-content">
           <Outlet />
         </main>
       </div>
@@ -70,15 +71,23 @@ const ProtectedRoute = ({ children, roles }) => {
 };
 
 function App() {
-  const { init, isLoading, token } = useAuthStore();
+  const { init, isInitializing, token } = useAuthStore();
   const { initTheme } = useThemeStore();
+  const { fetchNotifications, setupPushNotifications } = useNotificationStore();
 
   useEffect(() => {
     initTheme();
     init();
   }, []);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (token) {
+      fetchNotifications();
+      setupPushNotifications();
+    }
+  }, [token]);
+
+  if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
         <div className="text-center">

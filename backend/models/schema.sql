@@ -8,10 +8,12 @@ CREATE TABLE IF NOT EXISTS users (
   password TEXT NOT NULL,
   name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'student' CHECK (role IN ('super_admin', 'faculty', 'cr', 'student')),
+  course TEXT,
   branch TEXT,
   year_of_grad INTEGER,
   dept TEXT,
   section TEXT,
+  phone TEXT,
   is_cr BOOLEAN DEFAULT false,
   avatar_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()

@@ -95,11 +95,11 @@ const Dashboard = () => {
         <div className="hidden md:block w-px bg-gray-200 dark:bg-gray-700 my-2"></div>
 
         {/* Right Side: Categories */}
-        <div className="flex flex-col justify-center gap-5 w-full">
+        <div className="flex flex-col justify-center gap-5 w-full overflow-hidden">
           {/* Posted section */}
           <div>
             <h3 className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-secondary)' }}>Posted</h3>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex overflow-x-auto md:flex-wrap gap-2 pb-3 -mx-4 px-4 md:mx-0 md:px-0 md:pb-0 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               {POSTED_CATEGORIES.map((cat) => (
                 <button
                   key={cat}
@@ -115,7 +115,7 @@ const Dashboard = () => {
           {/* Scraped section */}
           <div>
             <h3 className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-secondary)' }}>Scraped</h3>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex overflow-x-auto md:flex-wrap gap-2 pb-3 -mx-4 px-4 md:mx-0 md:px-0 md:pb-0 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               {SCRAPED_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}

@@ -23,6 +23,7 @@ const PostNotice = () => {
   const [targetSection, setTargetSection] = useState('all');
   const [priority, setPriority] = useState('none');
   const [pinDuration, setPinDuration] = useState('none');
+  const [sendNotification, setSendNotification] = useState(false);
   const [posting, setPosting] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(isEditMode);
 
@@ -80,6 +81,7 @@ const PostNotice = () => {
         priority: priority === 'none' ? null : priority,
         pinned_duration: pinDuration === 'none' ? null : pinDuration,
         target_criteria: targetCriteria,
+        send_notification: sendNotification,
       };
 
       if (isEditMode) {
@@ -98,6 +100,7 @@ const PostNotice = () => {
   };
 
   const isCR = user?.role === 'cr';
+  const canNotify = user?.role === 'super_admin' || user?.role === 'cr';
 
   if (loadingInitial) {
     return (
@@ -204,6 +207,25 @@ const PostNotice = () => {
         {isCR && (
           <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 text-sm">
             As a Class Representative, this notice will automatically be targeted to your class: {user?.branch} {user?.section ? `Section ${user.section}` : ''} {user?.year_of_grad || ''}
+          </div>
+        )}
+
+        {/* Notify Checkbox */}
+        {canNotify && !isEditMode && (
+          <div className="flex items-center gap-3 p-4 rounded-lg border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
+            <input 
+              type="checkbox" 
+              id="notify_users" 
+              checked={sendNotification} 
+              onChange={(e) => setSendNotification(e.target.checked)} 
+              className="w-5 h-5 rounded border-gray-300 text-brand-500 focus:ring-brand-500" 
+            />
+            <label htmlFor="notify_users" className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Send Push Notification
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                This will alert targeted users via the in-app Bell menu and their browser push notifications.
+              </p>
+            </label>
           </div>
         )}
 

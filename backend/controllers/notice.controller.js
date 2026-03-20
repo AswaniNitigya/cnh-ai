@@ -102,7 +102,7 @@ const getNoticeById = async (req, res) => {
 // Post a new notice (manual - Faculty/CR)
 const createNotice = async (req, res) => {
   try {
-    const { title, content, category, target_criteria, pdf_url, original_image_url, priority, pinned_duration } = req.body;
+    const { title, content, category, target_criteria, pdf_url, original_image_url, priority, pinned_duration, send_notification } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ error: 'Title and content are required.' });
@@ -152,6 +152,32 @@ const createNotice = async (req, res) => {
     if (error) {
       console.error('Create notice error:', error);
       return res.status(500).json({ error: 'Failed to create notice.' });
+    }
+
+    // Trigger Notifications if requested and authorized
+    if (send_notification && (req.user.role === 'super_admin' || req.user.role === 'cr')) {
+      try {
+        let uQuery = supabase.from('users').select('id');
+        if (!finalTarget.global) {
+          if (finalTarget.branch && finalTarget.branch !== 'all') uQuery = uQuery.eq('branch', finalTarget.branch);
+          if (finalTarget.year && finalTarget.year !== 'all') uQuery = uQuery.eq('year_of_grad', String(finalTarget.year));
+          if (finalTarget.section && finalTarget.section !== 'all') uQuery = uQuery.eq('section', finalTarget.section);
+        }
+        const { data: users } = await uQuery;
+        
+        if (users && users.length > 0) {
+          const userIds = users.map(u => u.id);
+          const { createInAppNotifications, sendPushNotification } = require('./push.controller');
+          
+          const notifTitle = `New Notice: ${title}`;
+          const notifBody = content.length > 80 ? content.substring(0, 80) + '...' : content;
+          
+          await createInAppNotifications(userIds, notifTitle, notifBody, notice.id);
+          await sendPushNotification(userIds, { title: notifTitle, body: notifBody, url: '/notice/' + notice.id });
+        }
+      } catch (notifErr) {
+        console.error('Failed to blast notifications:', notifErr);
+      }
     }
 
     res.status(201).json({ notice });

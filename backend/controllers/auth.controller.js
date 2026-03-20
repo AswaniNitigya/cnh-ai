@@ -5,7 +5,7 @@ const supabase = require('../models/supabase');
 // Register a new user
 const register = async (req, res) => {
   try {
-    const { email, password, name, role, branch, year_of_grad, dept, section, is_cr, phone } = req.body;
+    const { email, password, name, role, course, branch, year_of_grad, dept, section, is_cr, phone } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required.' });
@@ -31,8 +31,7 @@ const register = async (req, res) => {
     const userRole = validRoles.includes(role) ? role : 'student';
 
     // Check if user requires approval
-    const isMmmut = email.endsWith('@mmmut.ac.in');
-    const isNormalStudent = userRole === 'student' && isMmmut;
+    const isNormalStudent = userRole === 'student';
     const userStatus = isNormalStudent ? 'active' : 'pending_approval';
 
     // Insert user into Supabase immediately with correct status
@@ -43,11 +42,12 @@ const register = async (req, res) => {
         password: hashedPassword,
         name,
         role: userRole,
+        course: course || null,
         branch: branch || null,
         year_of_grad: year_of_grad || null,
         dept: dept || null,
         section: section || null,
-        is_cr: is_cr || false,
+        is_cr: userRole === 'cr' ? true : (is_cr || false),
         avatar_url: null,
         phone: phone || null,
         status: userStatus
@@ -79,7 +79,7 @@ const register = async (req, res) => {
         section: newUser.section,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' }
     );
 
     const { password: _, ...userWithoutPassword } = newUser;
@@ -133,7 +133,7 @@ const login = async (req, res) => {
         section: user.section,
       },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' }
     );
 
     const { password: _, ...userWithoutPassword } = user;
@@ -164,4 +164,52 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe };
+// Change password
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required.' });
+    }
+
+    // Fetch user password
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('password')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Compare
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Incorrect current password.' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update in DB
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password: hashedPassword })
+      .eq('id', req.user.id);
+
+    if (updateError) {
+      console.error('Password update error:', updateError);
+      return res.status(500).json({ error: 'Failed to update password.' });
+    }
+
+    res.json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Server error.' });
+  }
+};
+
+module.exports = { register, login, getMe, changePassword };
