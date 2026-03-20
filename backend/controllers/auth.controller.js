@@ -5,7 +5,7 @@ const supabase = require('../models/supabase');
 // Register a new user
 const register = async (req, res) => {
   try {
-    const { email, password, name, role, branch, year_of_grad, dept, section, is_cr } = req.body;
+    const { email, password, name, role, branch, year_of_grad, dept, section, is_cr, phone } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required.' });
@@ -30,7 +30,12 @@ const register = async (req, res) => {
     const validRoles = ['super_admin', 'faculty', 'cr', 'student'];
     const userRole = validRoles.includes(role) ? role : 'student';
 
-    // Insert user
+    // Check if user requires approval
+    const isMmmut = email.endsWith('@mmmut.ac.in');
+    const isNormalStudent = userRole === 'student' && isMmmut;
+    const userStatus = isNormalStudent ? 'active' : 'pending_approval';
+
+    // Insert user into Supabase immediately with correct status
     const { data: newUser, error } = await supabase
       .from('users')
       .insert([{
@@ -44,6 +49,8 @@ const register = async (req, res) => {
         section: section || null,
         is_cr: is_cr || false,
         avatar_url: null,
+        phone: phone || null,
+        status: userStatus
       }])
       .select()
       .single();
@@ -51,6 +58,12 @@ const register = async (req, res) => {
     if (error) {
       console.error('Supabase insert error:', error);
       return res.status(500).json({ error: 'Failed to create user.' });
+    }
+
+    if (userStatus === 'pending_approval') {
+      return res.status(202).json({ 
+        message: 'Registration pending admin approval.' 
+      });
     }
 
     // Generate JWT
@@ -95,6 +108,10 @@ const login = async (req, res) => {
 
     if (error || !user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    if (user.status === 'pending_approval') {
+      return res.status(403).json({ error: 'Account is pending admin approval.' });
     }
 
     // Compare password

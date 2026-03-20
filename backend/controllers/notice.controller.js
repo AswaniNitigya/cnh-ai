@@ -4,7 +4,7 @@ const supabase = require('../models/supabase');
 const getFeed = async (req, res) => {
   try {
     const { branch, year_of_grad, dept, section } = req.user;
-    const { category, page = 1, limit = 20 } = req.query;
+    const { category, source, important, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     let query = supabase
@@ -14,8 +14,17 @@ const getFeed = async (req, res) => {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (category && category !== 'all') {
-      query = query.eq('category', category);
+    if (important === 'true') {
+      const now = new Date().toISOString();
+      query = query.or(`pinned_until.gt.${now},priority.eq.p1,priority.eq.p2`);
+    } else {
+      if (category && category !== 'all') {
+        query = query.eq('category', category);
+      }
+      
+      if (source) {
+        query = query.eq('source', source);
+      }
     }
 
     const { data: notices, error, count } = await query;
@@ -93,7 +102,7 @@ const getNoticeById = async (req, res) => {
 // Post a new notice (manual - Faculty/CR)
 const createNotice = async (req, res) => {
   try {
-    const { title, content, category, target_criteria, pdf_url, original_image_url } = req.body;
+    const { title, content, category, target_criteria, pdf_url, original_image_url, priority, pinned_duration } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ error: 'Title and content are required.' });
@@ -109,6 +118,19 @@ const createNotice = async (req, res) => {
       };
     }
 
+    let pinned_until = null;
+    if (pinned_duration && pinned_duration !== 'none') {
+      const durationMap = {
+        '6h': 6 * 60 * 60 * 1000,
+        '24h': 24 * 60 * 60 * 1000,
+        '1w': 7 * 24 * 60 * 60 * 1000,
+        '1m': 30 * 24 * 60 * 60 * 1000,
+      };
+      if (durationMap[pinned_duration]) {
+        pinned_until = new Date(Date.now() + durationMap[pinned_duration]).toISOString();
+      }
+    }
+
     const { data: notice, error } = await supabase
       .from('notices')
       .insert([{
@@ -121,6 +143,8 @@ const createNotice = async (req, res) => {
         source: 'manual',
         target_criteria: finalTarget,
         status: 'active',
+        priority: priority || null,
+        pinned_until: pinned_until
       }])
       .select('*, poster:posted_by(id, name, role, avatar_url)')
       .single();
@@ -141,12 +165,12 @@ const createNotice = async (req, res) => {
 const updateNotice = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const { title, content, category, target_criteria, pdf_url, priority, pinned_duration } = req.body;
 
     // Check ownership or admin
     const { data: existing } = await supabase
       .from('notices')
-      .select('posted_by')
+      .select('posted_by, title, content, pdf_url')
       .eq('id', id)
       .single();
 
@@ -154,8 +178,43 @@ const updateNotice = async (req, res) => {
       return res.status(404).json({ error: 'Notice not found.' });
     }
 
-    if (existing.posted_by !== req.user.id && !['super_admin', 'faculty'].includes(req.user.role)) {
+    if (existing.posted_by !== req.user.id && req.user.role !== 'super_admin') {
       return res.status(403).json({ error: 'Not authorized to edit this notice.' });
+    }
+
+    let pinned_until = undefined; // undefined means do not update, null means clear it
+    if (pinned_duration) {
+      if (pinned_duration === 'none') {
+        pinned_until = null;
+      } else {
+        const durationMap = {
+          '6h': 6 * 60 * 60 * 1000,
+          '24h': 24 * 60 * 60 * 1000,
+          '1w': 7 * 24 * 60 * 60 * 1000,
+          '1m': 30 * 24 * 60 * 60 * 1000,
+        };
+        if (durationMap[pinned_duration]) {
+          pinned_until = new Date(Date.now() + durationMap[pinned_duration]).toISOString();
+        }
+      }
+    }
+
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (content !== undefined) updates.content = content;
+    if (category !== undefined) updates.category = category;
+    if (pdf_url !== undefined) updates.pdf_url = pdf_url;
+    if (priority !== undefined) updates.priority = priority === 'none' ? null : priority;
+    if (target_criteria !== undefined) updates.target_criteria = target_criteria;
+    if (pinned_until !== undefined) updates.pinned_until = pinned_until;
+
+    // Set is_edited if title, content, or pdf_url changed
+    if (
+      (title !== undefined && title !== existing.title) ||
+      (content !== undefined && content !== existing.content) ||
+      (pdf_url !== undefined && pdf_url !== existing.pdf_url)
+    ) {
+      updates.is_edited = true;
     }
 
     const { data: notice, error } = await supabase

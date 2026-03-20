@@ -108,6 +108,9 @@ function App() {
           <Route path="/post-notice" element={
             <ProtectedRoute roles={['super_admin', 'faculty', 'cr']}><PostNotice /></ProtectedRoute>
           } />
+          <Route path="/edit-notice/:id" element={
+            <ProtectedRoute roles={['super_admin', 'faculty', 'cr']}><PostNotice /></ProtectedRoute>
+          } />
 
           {/* Admin/Faculty routes */}
           <Route path="/ocr-upload" element={

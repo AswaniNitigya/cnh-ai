@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Send, Save, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Send, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 import useAuthStore from '../store/authStore';
 
@@ -12,13 +12,50 @@ const CATEGORIES = ['academic', 'exam', 'event', 'placement', 'general'];
 const PostNotice = () => {
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditMode = !!id;
+
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
   const [targetBranch, setTargetBranch] = useState('all');
   const [targetYear, setTargetYear] = useState('all');
   const [targetSection, setTargetSection] = useState('all');
+  const [priority, setPriority] = useState('none');
+  const [pinDuration, setPinDuration] = useState('none');
   const [posting, setPosting] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(isEditMode);
+
+  useEffect(() => {
+    if (isEditMode) {
+      fetchNotice();
+    }
+  }, [id]);
+
+  const fetchNotice = async () => {
+    try {
+      setLoadingInitial(true);
+      const { data } = await api.get(`/notices/${id}`);
+      const notice = data.notice;
+      
+      setTitle(notice.title || '');
+      setContent(notice.content || '');
+      setCategory(notice.category || 'general');
+      setPriority(notice.priority || 'none');
+      
+      if (notice.target_criteria) {
+        setTargetBranch(notice.target_criteria.branch || 'all');
+        setTargetYear(notice.target_criteria.year || 'all');
+        setTargetSection(notice.target_criteria.section || 'all');
+      }
+    } catch (err) {
+      console.error('Failed to fetch notice for edit:', err);
+      alert('Could not load notice for editing.');
+      navigate('/');
+    } finally {
+      setLoadingInitial(false);
+    }
+  };
 
   const handlePost = async (status = 'active') => {
     if (!title.trim() || !content.trim()) {
@@ -36,12 +73,20 @@ const PostNotice = () => {
         targetCriteria.global = true;
       }
 
-      await api.post('/notices/manual', {
+      const payload = {
         title,
         content,
         category,
+        priority: priority === 'none' ? null : priority,
+        pinned_duration: pinDuration === 'none' ? null : pinDuration,
         target_criteria: targetCriteria,
-      });
+      };
+
+      if (isEditMode) {
+        await api.put(`/notices/${id}`, payload);
+      } else {
+        await api.post('/notices/manual', payload);
+      }
 
       navigate('/');
     } catch (err) {
@@ -54,11 +99,19 @@ const PostNotice = () => {
 
   const isCR = user?.role === 'cr';
 
+  if (loadingInitial) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--brand-500)' }} />
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Post Notice</h1>
+      <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>{isEditMode ? 'Edit Notice' : 'Post Notice'}</h1>
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-        {isCR ? 'Post a notice to your class section' : 'Create and distribute a new notice'}
+        {isEditMode ? 'Update this notice details, priority, or pinning' : (isCR ? 'Post a notice to your class section' : 'Create and distribute a new notice')}
       </p>
 
       <div className="glass-card p-6 space-y-5">
@@ -78,14 +131,27 @@ const PostNotice = () => {
             style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
         </div>
 
-        {/* Category */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Category</label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500/30 appearance-none"
-            style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-          </select>
+        {/* Category and Priority */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Category</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500/30 appearance-none"
+              style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Priority Tag</label>
+            <select value={priority} onChange={(e) => setPriority(e.target.value)}
+              className="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500/30 appearance-none"
+              style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+              <option value="none">None</option>
+              <option value="p1">P1 (High)</option>
+              <option value="p2">P2 (Medium)</option>
+              <option value="p3">P3 (Low)</option>
+            </select>
+          </div>
         </div>
 
         {/* Target audience (disabled for CR - auto-set) */}
@@ -118,6 +184,23 @@ const PostNotice = () => {
           </div>
         )}
 
+        {/* Pin Duration */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-primary)' }}>Pin Notice (Optional)</label>
+          <select value={pinDuration} onChange={(e) => setPinDuration(e.target.value)}
+            className="w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-500/30 appearance-none"
+            style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+            <option value="none">Do not pin</option>
+            <option value="6h">6 Hours</option>
+            <option value="24h">24 Hours</option>
+            <option value="1w">1 Week</option>
+            <option value="1m">1 Month</option>
+          </select>
+          <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+            Pinning will keep this notice at the top for the target audience.
+          </p>
+        </div>
+
         {isCR && (
           <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 text-sm">
             As a Class Representative, this notice will automatically be targeted to your class: {user?.branch} {user?.section ? `Section ${user.section}` : ''} {user?.year_of_grad || ''}
@@ -125,16 +208,11 @@ const PostNotice = () => {
         )}
 
         {/* Actions */}
-        <div className="flex gap-3 pt-2">
-          <button onClick={() => handlePost('draft')} disabled={posting}
-            className="flex-1 py-2.5 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-            <Save className="w-4 h-4" /> Save as Draft
-          </button>
+        <div className="pt-2">
           <button onClick={() => handlePost('active')} disabled={posting}
-            className="flex-1 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
+            className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60 transition-colors">
             {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Post Notice
+            {isEditMode ? 'Save Changes' : 'Post Notice'}
           </button>
         </div>
       </div>

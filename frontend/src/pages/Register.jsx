@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, GraduationCap, Loader2, Building2, Calendar, BookOpen } from 'lucide-react';
+import { Mail, Lock, User, GraduationCap, Loader2, Building2, Calendar, BookOpen, Clock } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
 const BRANCHES = ['CSE', 'ECE', 'EE', 'ME', 'CE', 'IT', 'Chemical', 'Other'];
@@ -19,6 +19,9 @@ const Register = () => {
     name: '', email: '', password: '', role: 'student',
     branch: '', year_of_grad: '', dept: '', section: '', is_cr: false,
   });
+  const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [showPhonePopup, setShowPhonePopup] = useState(false);
+  const [phone, setPhone] = useState('');
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -30,12 +33,30 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Check if user requires approval
+    const isMmmut = form.email.endsWith('@mmmut.ac.in');
+    const isNormalStudent = form.role === 'student' && isMmmut;
+    
+    // If they need approval, and we haven't asked for phone yet, show popup
+    if (!isNormalStudent && !showPhonePopup && !phone) {
+      setShowPhonePopup(true);
+      return;
+    }
+
     clearError();
-    const success = await register({
+    const result = await register({
       ...form,
+      phone,
       year_of_grad: form.year_of_grad ? parseInt(form.year_of_grad) : null,
     });
-    if (success) navigate('/');
+    
+    if (result && result.pending) {
+      setShowPhonePopup(false);
+      setIsPendingApproval(true);
+    } else if (result && result.success) {
+      navigate('/');
+    }
   };
 
   return (
@@ -59,7 +80,21 @@ const Register = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {isPendingApproval ? (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-amber-100 dark:bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Clock className="w-8 h-8" />
+              </div>
+              <h3 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Registration Request Submitted!</h3>
+              <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
+                Your account request has been sent to the administrators for approval. You will be able to log in once it's approved.
+              </p>
+              <Link to="/login" className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg transition-all flex items-center justify-center">
+                Back to Login
+              </Link>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name & Email */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -151,12 +186,60 @@ const Register = () => {
               {isLoading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
+          )}
 
-          <p className="text-center text-sm mt-4" style={{ color: 'var(--text-secondary)' }}>
-            Already have an account? <Link to="/login" className="text-brand-500 hover:text-brand-600 font-semibold">Sign In</Link>
-          </p>
+          {!isPendingApproval && (
+            <p className="text-center text-sm mt-4" style={{ color: 'var(--text-secondary)' }}>
+              Already have an account? <Link to="/login" className="text-brand-500 hover:text-brand-600 font-semibold">Sign In</Link>
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Phone Number Modal */}
+      {showPhonePopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-sm overflow-hidden border border-gray-200 dark:border-gray-700">
+            <div className="p-6">
+              <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">Verification Required</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                To verify your details, you will be contacted on this phone number. An admin will approve your request shortly.
+              </p>
+              
+              <div className="mb-6">
+                <label className="block text-xs font-medium mb-1 text-gray-700 dark:text-gray-300">Phone Number</label>
+                <input 
+                  type="tel" 
+                  value={phone} 
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+91 9876543210" 
+                  required
+                  className="w-full px-4 py-2 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowPhonePopup(false)}
+                  type="button"
+                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-300 font-semibold rounded-lg transition-colors text-sm"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSubmit}
+                  disabled={isLoading || !phone}
+                  type="button"
+                  className="flex-1 py-2 bg-brand-500 hover:bg-brand-600 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-60 text-sm"
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Submit Request
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

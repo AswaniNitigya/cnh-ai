@@ -43,16 +43,23 @@ const useAuthStore = create((set, get) => ({
   register: async (userData) => {
     try {
       set({ isLoading: true, error: null });
-      const { data } = await api.post('/auth/register', userData);
+      const { data, status } = await api.post('/auth/register', userData);
+      
+      if (status === 202) {
+        set({ isLoading: false });
+        // Return a special pending state to the UI
+        return { pending: true };
+      }
+
       localStorage.setItem('cnh_token', data.token);
       set({ user: data.user, token: data.token, isLoading: false });
-      return true;
+      return { success: true };
     } catch (err) {
       set({
         error: err.response?.data?.error || 'Registration failed.',
         isLoading: false,
       });
-      return false;
+      return { success: false };
     }
   },
 

@@ -4,7 +4,8 @@ const scraperService = require('../services/scraper.service');
 // Trigger the web scraper manually
 const triggerScraper = async (req, res) => {
   try {
-    const results = await scraperService.scrape();
+    const urls = req.body?.urls || [];
+    const results = await scraperService.scrape(urls);
     res.json({
       message: 'Scraper completed successfully.',
       newNotices: results.newCount,
@@ -82,4 +83,66 @@ const getUsers = async (req, res) => {
   }
 };
 
-module.exports = { triggerScraper, getStats, getUsers };
+// Get pending users
+const getPendingUsers = async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, email, name, role, branch, year_of_grad, dept, section, is_cr, created_at, phone, status')
+      .eq('status', 'pending_approval')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json(users || []);
+  } catch (err) {
+    console.error('Fetch pending users error:', err);
+    res.status(500).json({ error: 'Server error fetching pending users' });
+  }
+};
+
+// Approve user
+const approveUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Update status to active
+    const { data: user, error } = await supabase
+      .from('users')
+      .update({ status: 'active' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error || !user) {
+      console.error('Supabase update error on approval:', error);
+      return res.status(500).json({ error: 'Failed to approve user in DB.' });
+    }
+
+    res.json({ message: 'User approved securely.', user });
+  } catch (err) {
+    console.error('Approve error:', err);
+    res.status(500).json({ error: 'Server error during approval.' });
+  }
+};
+
+// Reject user
+const rejectUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Delete the rejected user row to keep DB clean
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    
+    res.json({ message: 'User rejected and removed.' });
+  } catch (err) {
+    console.error('Reject error:', err);
+    res.status(500).json({ error: 'Server error during rejection.' });
+  }
+};
+
+module.exports = { triggerScraper, getStats, getUsers, getPendingUsers, approveUser, rejectUser };

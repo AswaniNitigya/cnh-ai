@@ -10,9 +10,22 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
   const [scrapeResult, setScrapeResult] = useState(null);
+  
+  // Scraper URLs
+  const AVAILABLE_URLS = [
+    { id: 'all_record', label: 'All Records', url: 'https://www.mmmut.ac.in/AllRecord' },
+    { id: 'exam_schedule', label: 'Examination Schedule', url: 'https://www.mmmut.ac.in/ExaminationSchedule' }
+  ];
+  const [selectedUrls, setSelectedUrls] = useState(['https://www.mmmut.ac.in/AllRecord']);
+  
+  // New States for User Approvals
+  const [activeTab, setActiveTab] = useState('notices');
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [approving, setApproving] = useState(false);
 
   useEffect(() => {
     fetchData();
+    fetchPendingUsers();
   }, []);
 
   const fetchData = async () => {
@@ -33,9 +46,10 @@ const AdminPanel = () => {
 
   const triggerScraper = async () => {
     try {
+      if (selectedUrls.length === 0) return;
       setScraping(true);
       setScrapeResult(null);
-      const { data } = await api.get('/admin/trigger-scraper');
+      const { data } = await api.post('/admin/trigger-scraper', { urls: selectedUrls });
       setScrapeResult(data);
       fetchData();
     } catch (err) {
@@ -45,12 +59,50 @@ const AdminPanel = () => {
     }
   };
 
+  const handleUrlSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedUrls(AVAILABLE_URLS.map(u => u.url));
+    } else {
+      setSelectedUrls([]);
+    }
+  };
+
+  const handleUrlToggle = (url) => {
+    setSelectedUrls(prev => 
+      prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]
+    );
+  };
+
   const handleArchive = async (id) => {
     try {
       await api.delete(`/notices/${id}`);
       setNotices(prev => prev.filter(n => n.id !== id));
     } catch (err) {
       console.error('Archive error:', err);
+    }
+  };
+
+  const fetchPendingUsers = async () => {
+    try {
+      // Catch 404s gracefully if backend isn't ready
+      const { data } = await api.get('/admin/users/pending').catch(() => ({ data: [] }));
+      setPendingUsers(data || []);
+    } catch (err) {
+      console.error('Fetch pending users error:', err);
+    }
+  };
+
+  const handleApprove = async (userId, action) => {
+    try {
+      setApproving(true);
+      await api.post(`/admin/users/${userId}/${action}`);
+      setPendingUsers(prev => prev.filter(u => u.id !== userId));
+      // Refresh stats if needed
+      if (action === 'approve') fetchData();
+    } catch (err) {
+      console.error(`${action} error:`, err);
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -71,20 +123,49 @@ const AdminPanel = () => {
 
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Admin Dashboard</h1>
           <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Manage notices, users, and scrapers</p>
         </div>
 
-        <button
-          onClick={triggerScraper}
-          disabled={scraping}
-          className="flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-        >
-          <RefreshCw className={`w-4 h-4 ${scraping ? 'animate-spin' : ''}`} />
-          {scraping ? 'Scraping...' : 'Run Scraper'}
-        </button>
+        <div className="glass-card p-4 flex flex-col items-end gap-3 w-full md:w-auto">
+          <div className="w-full">
+            <h4 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Targets to Scrape</h4>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+                <input 
+                  type="checkbox" 
+                  checked={selectedUrls.length === AVAILABLE_URLS.length} 
+                  onChange={handleUrlSelectAll}
+                  className="rounded text-brand-500 focus:ring-brand-500/30 bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                />
+                Select All URLs
+              </label>
+              <div className="pl-4 space-y-1 mt-1">
+                {AVAILABLE_URLS.map(u => (
+                  <label key={u.id} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                    <input 
+                      type="checkbox" 
+                      onChange={() => handleUrlToggle(u.url)}
+                      checked={selectedUrls.includes(u.url)} 
+                      className="rounded text-brand-500 focus:ring-brand-500/30 bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-600"
+                    />
+                    {u.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={triggerScraper}
+            disabled={scraping || selectedUrls.length === 0}
+            className="flex items-center justify-center w-full gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+          >
+            <RefreshCw className={`w-4 h-4 ${scraping ? 'animate-spin' : ''}`} />
+            {scraping ? 'Scraping...' : 'Run Scraper Final'}
+          </button>
+        </div>
       </div>
 
       {/* Scrape result */}
@@ -109,7 +190,36 @@ const AdminPanel = () => {
         ))}
       </div>
 
-      {/* Recent notices table */}
+      {/* Tabs */}
+      <div className="flex border-b mb-6" style={{ borderColor: 'var(--border-color)' }}>
+        <button
+          onClick={() => setActiveTab('notices')}
+          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'notices'
+              ? 'border-brand-500 text-brand-500'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+        >
+          Recent Notices
+        </button>
+        <button
+          onClick={() => setActiveTab('approvals')}
+          className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+            activeTab === 'approvals'
+              ? 'border-brand-500 text-brand-500'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          }`}
+        >
+          Pending Approvals
+          {pendingUsers.length > 0 && (
+            <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">
+              {pendingUsers.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'notices' && (
       <div className="glass-card overflow-hidden">
         <div className="p-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Recent Notices</h2>
@@ -144,7 +254,7 @@ const AdminPanel = () => {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Link to={`/notice/${notice.id}`} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" style={{ color: 'var(--text-muted)' }}>
+                      <Link to={`/edit-notice/${notice.id}`} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" style={{ color: 'var(--text-muted)' }}>
                         <Pencil className="w-4 h-4" />
                       </Link>
                       <button onClick={() => handleArchive(notice.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-red-400 hover:text-red-500 transition-colors">
@@ -163,6 +273,65 @@ const AdminPanel = () => {
           )}
         </div>
       </div>
+      )}
+
+      {activeTab === 'approvals' && (
+      <div className="glass-card overflow-hidden">
+        <div className="p-5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>User Approvals</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>Name</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>Email</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>Phone</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>Role</th>
+                <th className="text-right px-5 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors" style={{ borderBottom: '1px solid var(--border-light)' }}>
+                  <td className="px-5 py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{user.name}</td>
+                  <td className="px-5 py-3" style={{ color: 'var(--text-secondary)' }}>{user.email}</td>
+                  <td className="px-5 py-3" style={{ color: 'var(--text-secondary)' }}>{user.phone || 'N/A'}</td>
+                  <td className="px-5 py-3">
+                    <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 capitalize">
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => handleApprove(user.id, 'approve')}
+                        disabled={approving}
+                        className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors text-xs font-medium disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button 
+                        onClick={() => handleApprove(user.id, 'reject')}
+                        disabled={approving}
+                        className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-600 dark:bg-red-500/20 dark:hover:bg-red-500/30 dark:text-red-400 rounded-lg transition-colors text-xs font-medium disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {pendingUsers.length === 0 && (
+            <div className="text-center py-10" style={{ color: 'var(--text-muted)' }}>
+              <p>No pending users to approve.</p>
+            </div>
+          )}
+        </div>
+      </div>
+      )}
     </div>
   );
 };

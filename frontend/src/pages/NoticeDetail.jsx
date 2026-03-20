@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Clock, User, Download, ExternalLink, Loader2 } from 'lucide-react';
+import { ArrowLeft, Clock, User, Download, ExternalLink, Loader2, Pencil } from 'lucide-react';
 import api from '../lib/api';
+import useAuthStore from '../store/authStore';
 import { formatDate, getCategoryColor } from '../lib/utils';
 
 const NoticeDetail = () => {
   const { id } = useParams();
+  const { user } = useAuthStore();
   const [notice, setNotice] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,10 +72,25 @@ const NoticeDetail = () => {
           </span>
         </div>
 
-        {/* Title */}
-        <h1 className="text-2xl md:text-3xl font-bold mb-4 leading-tight" style={{ color: 'var(--text-primary)' }}>
-          {notice.title}
-        </h1>
+        {/* Title and Edit Button */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-4">
+          <h1 className="text-2xl md:text-3xl font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
+            {notice.title}
+            {notice.is_edited && (
+              <span className="text-sm font-normal italic text-gray-400 dark:text-gray-500 ml-3 align-middle block sm:inline mt-1 sm:mt-0">(Edited)</span>
+            )}
+          </h1>
+          
+          {(user?.role === 'super_admin' || user?.id === notice.posted_by) && (
+            <Link 
+              to={`/edit-notice/${notice.id}`}
+              className="px-3 py-1.5 flex items-center gap-2 rounded-lg border text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors shrink-0"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              <Pencil className="w-4 h-4" /> Edit
+            </Link>
+          )}
+        </div>
 
         {/* Meta info */}
         <div className="flex flex-wrap items-center gap-4 mb-6 text-sm" style={{ color: 'var(--text-secondary)' }}>
